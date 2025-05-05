@@ -1,13 +1,13 @@
 from flask import Flask
 import threading
 import time
-import schedule
 import requests
 from bs4 import BeautifulSoup
 import telegram
 import os
 import logging
 from datetime import datetime
+import random
 
 app = Flask(__name__)
 
@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 # Ayarlar
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL_MINUTES', 1))  # Dakika cinsinden
+CHECK_INTERVAL = 10  # 10 saniye
+UPTIMEROBOT_PING_URL = os.getenv('UPTIMEROBOT_PING_URL', '')
 
 # Tesla Envanter URL
 TESLA_URL = "https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0"
@@ -26,6 +27,7 @@ TESLA_URL = "https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=3402
 # Önceki stok bilgisini saklamak için
 previous_stock = []
 last_notification_time = None
+is_active = True
 
 def send_telegram_message(message):
     try:
@@ -38,22 +40,26 @@ def send_telegram_message(message):
         return False
 
 def check_tesla_stock():
-    global previous_stock, last_notification_time
+    global previous_stock, last_notification_time, is_active
+    
+    if not is_active:
+        return
     
     try:
+        # Rastgele bekleme (1-3 sn)
+        time.sleep(random.uniform(1, 3))
+        
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        logger.info(f"Stok kontrolü başlatılıyor... {datetime.now().strftime('%H:%M:%S')}")
+        logger.info(f"Stok kontrolü: {datetime.now().strftime('%H:%M:%S')}")
         
-        response = requests.get(TESLA_URL, headers=headers, timeout=10)
+        response = requests.get(TESLA_URL, headers=headers, timeout=8)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Araç bilgilerini çekme (Tesla'nın güncel HTML yapısına göre güncelleyin)
-        vehicles = soup.find_all('div', class_='result')  # Örnek class
+        vehicles = soup.find_all('div', class_='result')  # Güncel class ismi
         
         current_stock = []
         
@@ -71,31 +77,24 @@ def check_tesla_stock():
         
         # Stok değişikliklerini kontrol et
         if set(current_stock) != set(previous_stock):
-            notification_cooldown = 300  # 5 dakika (aynı değişiklik için tekrar bildirim göndermemek için)
+            notification_cooldown = 60  # 1 dakika
             
             if (last_notification_time is None or 
                 (datetime.now() - last_notification_time).total_seconds() > notification_cooldown):
                 
-                if not previous_stock:
-                    message = "🚗 Tesla Stok Takip Sistemi Başlatıldı!\n\n"
-                    message += f"⏰ Kontrol Aralığı: {CHECK_INTERVAL} dakika\n\n"
-                    message += "📢 Mevcut Stok:\n\n"
-                    message += "\n\n".join(current_stock) if current_stock else "Stokta araç bulunmamaktadır."
-                else:
-                    message = "🔄 Tesla Stok Değişikliği Algılandı!\n\n"
-                    
-                    new_vehicles = [v for v in current_stock if v not in previous_stock]
-                    if new_vehicles:
-                        message += f"➕ {len(new_vehicles)} Yeni Araç:\n\n"
-                        message += "\n\n".join(new_vehicles) + "\n\n"
-                    
-                    removed_vehicles = [v for v in previous_stock if v not in current_stock]
-                    if removed_vehicles:
-                        message += f"➖ {len(removed_vehicles)} Araç Stoktan Düştü:\n\n"
-                        message += "\n\n".join(removed_vehicles) + "\n\n"
-                    
-                    message += "📋 Güncel Stok Durumu:\n\n"
-                    message += "\n\n".join(current_stock) if current_stock else "Stokta araç bulunmamaktadır."
+                message = "🔄 Tesla Stok Değişikliği!\n\n"
+                new_vehicles = [v for v in current_stock if v not in previous_stock]
+                if new_vehicles:
+                    message += f"➕ {len(new_vehicles)} Yeni Araç:\n\n"
+                    message += "\n\n".join(new_vehicles) + "\n\n"
+                
+                removed_vehicles = [v for v in previous_stock if v not in current_stock]
+                if removed_vehicles:
+                    message += f"➖ {len(removed_vehicles)} Araç Stoktan Düştü:\n\n"
+                    message += "\n\n".join(removed_vehicles) + "\n\n"
+                
+                message += "📋 Güncel Stok:\n\n"
+                message += "\n\n".join(current_stock) if current_stock else "Stokta araç yok"
                 
                 if send_telegram_message(message):
                     last_notification_time = datetime.now()
@@ -107,32 +106,53 @@ def check_tesla_stock():
     except Exception as e:
         logger.error(f"Beklenmeyen hata: {e}")
 
-def schedule_checker():
+def uptimerobot_ping():
     while True:
-        schedule.run_pending()
-        time.sleep(1)
+        if UPTIMEROBOT_PING_URL:
+            try:
+                requests.get(UPTIMEROBOT_PING_URL, timeout=5)
+                logger.info("UptimeRobot ping gönderildi")
+            except:
+                logger.warning("UptimeRobot ping gönderilemedi")
+        time.sleep(300)  # 5 dakikada bir ping
 
 @app.route('/')
 def home():
-    return "Tesla Stok Takip Sistemi Aktif"
+    global is_active
+    return f"Tesla Stok Takip Sistemi (Aktif: {is_active})<br>Son kontrol: {datetime.now().strftime('%H:%M:%S')}"
 
-def run_scheduler():
-    # Başlangıç mesajı
-    send_telegram_message(f"🔔 Tesla Stok Takip Sistemi Başlatıldı! Her {CHECK_INTERVAL} dakikada bir stok kontrol edilecek.")
-    
-    # Zamanlayıcıyı ayarla
-    schedule.every(CHECK_INTERVAL).minutes.do(check_tesla_stock)
-    
-    # İlk kontrolü hemen yap
+@app.route('/start')
+def start_monitoring():
+    global is_active
+    is_active = True
+    return "Monitoring started"
+
+@app.route('/stop')
+def stop_monitoring():
+    global is_active
+    is_active = False
+    return "Monitoring stopped"
+
+@app.route('/check-now')
+def manual_check():
     check_tesla_stock()
-    
-    # Zamanlayıcı thread'i başlat
-    t = threading.Thread(target=schedule_checker)
-    t.daemon = True
-    t.start()
+    return "Manuel kontrol tamamlandı"
 
-# Uygulama başladığında zamanlayıcıyı başlat
-run_scheduler()
+def run_monitoring():
+    # Başlangıç mesajı
+    send_telegram_message("🔔 Tesla Stok Takip Sistemi Başlatıldı! (10s aralık)")
+    
+    # UptimeRobot ping thread'i
+    threading.Thread(target=uptimerobot_ping, daemon=True).start()
+    
+    # Ana kontrol döngüsü
+    while True:
+        if is_active:
+            check_tesla_stock()
+        time.sleep(CHECK_INTERVAL)
+
+# Uygulama başladığında monitoring'i başlat
+threading.Thread(target=run_monitoring, daemon=True).start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
