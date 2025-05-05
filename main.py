@@ -1,64 +1,56 @@
 import os
 import time
-import threading
 import requests
-from flask import Flask
 from bs4 import BeautifulSoup
-from telegram import Bot
-from telegram.error import TelegramError
+from flask import Flask
+from threading import Thread
 
-# Flask uygulaması başlatma
+# Telegram Bot bilgileri
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Kontrol edilecek URL
+CAR_URL = os.getenv("https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0")
+
+# Flask uygulaması
 app = Flask(__name__)
 
-@app.route('/')
+@app.route("/")
 def home():
-    return 'Stok kontrol botu çalışıyor.'
+    return "Araç stok kontrol botu çalışıyor."
 
-if __name__ == '__main__':
-    app.run(debug=True)
-    
-# Telegram bot bilgilerinizi burada ayarlayın
-TELEGRAM_TOKEN = '7770662830:AAF81ZmkPNNCxV2sUg-0jSVyEb64fTNkBn8'
-CHAT_ID = '1476078120'
-bot = Bot(token=TELEGRAM_TOKEN)
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    try:
+        response = requests.post(url, data=data)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Telegram mesajı gönderilemedi: {e}")
 
-# Stok kontrolü yapan fonksiyon
-def check_stock():
-    url = "https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    }
-    
+def check_car_stock():
+    notified = False
     while True:
         try:
-            # Sayfayı al
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
+            response = requests.get(CAR_URL, timeout=10)
+            soup = BeautifulSoup(response.text, "html.parser")
+            image = soup.find("img")
+            
+            if image and not notified:
+                send_telegram_message("Araç stokta! Sayfada fotoğraf bulundu.")
+                notified = True
+            elif not image:
+                notified = False  # tekrar bildirim yapılabilir hale gelsin
 
-                # Sayfa içeriğinde fotoğraf var mı kontrol et
-                image_element = soup.find('img')  # Burada img etiketini kontrol ediyoruz
-                if image_element:
-                    message = "Stokta araç var!"
-                    bot.send_message(chat_id=CHAT_ID, text=message)
-                    print("Stokta araç var, Telegram'a bildirim gönderildi.")
-                else:
-                    print("Stokta araç yok.")
-            else:
-                print("Sayfaya erişim sağlanamadı, tekrar deneniyor...")
         except Exception as e:
-            print(f"Bir hata oluştu: {e}")
-        
-        # 10 saniyede bir kontrol et
-        time.sleep(10)
+            print(f"Kontrol sırasında hata: {e}")
 
-# Flask başlatma ve kontrol fonksiyonunu thread ile çalıştırma
-if __name__ == '__main__':
-    # Telegram kontrolünü ayrı bir thread'de çalıştırma
-    threading.Thread(target=check_stock, daemon=True).start()
+        time.sleep(10)  # 10 saniyede bir kontrol
 
-    # Flask uygulamasını başlatma
-    # Render veya başka bir platform için port ayarları
-    port = int(os.environ.get('PORT', 8080))  # Render gibi platformlar için PORT ayarını al
-    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+def run_flask():
+    app.run(host="0.0.0.0", port=10000)
 
+# Her iki işlemi aynı anda başlat
+if __name__ == "__main__":
+    Thread(target=check_car_stock).start()
+    run_flask()
