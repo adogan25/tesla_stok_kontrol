@@ -10,6 +10,13 @@ from telegram.error import TelegramError
 # Flask uygulaması başlatma
 app = Flask(__name__)
 
+@app.route('/')
+def home():
+    return 'Stok kontrol botu çalışıyor.'
+
+if __name__ == '__main__':
+    app.run(debug=True)
+    
 # Telegram bot bilgilerinizi burada ayarlayın
 TELEGRAM_TOKEN = '7770662830:AAF81ZmkPNNCxV2sUg-0jSVyEb64fTNkBn8'
 CHAT_ID = '1476078120'
@@ -54,6 +61,4 @@ if __name__ == '__main__':
     # Render veya başka bir platform için port ayarları
     port = int(os.environ.get('PORT', 8080))  # Render gibi platformlar için PORT ayarını al
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
-@app.route('/')
-def home():
-    return 'Stok kontrol botu çalışıyor.'
+
