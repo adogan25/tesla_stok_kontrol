@@ -1,60 +1,57 @@
-import os
-import logging
+import time
 import requests
-from bs4 import BeautifulSoup
 from flask import Flask
-import telegram
-from time import sleep
+from urllib.parse import quote  # url_quote yerine quote kullanıyoruz.
+import threading
 
-# Flask uygulaması başlatma
 app = Flask(__name__)
 
-# Telegram Bot Token ve Chat ID
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('CHAT_ID')
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+# Telegram Bot API bilgilerinizi buraya ekleyin
+TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+CHAT_ID = 'YOUR_CHAT_ID'
 
-# Telegram'a mesaj gönderme fonksiyonu
-def send_telegram_message(message):
-    try:
-        bot.send_message(chat_id=CHAT_ID, text=message)
-    except Exception as e:
-        logging.error(f"Telegram mesajı gönderilemedi: {e}")
+# Kontrol etmek istediğiniz URL
+URL_TO_CHECK = 'https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0'
 
-# Web scraping fonksiyonu
-def check_stock(url):
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Sayfada bir fotoğraf var mı kontrol et
-        image = soup.find('img')
-        if image:
-            send_telegram_message(f"Stokta araç var! Sayfa: {url}")
-        else:
-            send_telegram_message(f"Stokta araç yok. Sayfa: {url}")
-    except Exception as e:
-        logging.error(f"Web scraping hatası: {e}")
-        send_telegram_message(f"Hata oluştu: {e}")
-
-# Flask route - Uygulama başlatıldığında çalışacak
-@app.route('/')
-def home():
-    return "Web Scraper ve Telegram Bot Çalışıyor!"
-
-# Web scraping ve bildirim gönderen fonksiyon çalıştırma
-def run_scraping():
-    url = 'https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0'  # Web scraping yapılacak URL'yi buraya yazın
+# Fotoğraf var mı kontrol fonksiyonu
+def check_stock():
     while True:
-        check_stock(url)
-        sleep(3600)  # Her saat başı kontrol et
+        try:
+            # URL'deki sayfayı kontrol etme
+            response = requests.get(URL_TO_CHECK)
+            if response.status_code == 200:
+                if 'img' in response.text:  # Sayfada resim varsa
+                    send_telegram_message('Araç stokta mevcut!')
+                else:
+                    send_telegram_message('Araç stokta mevcut değil.')
+        except Exception as e:
+            send_telegram_message(f'Bir hata oluştu: {e}')
+        
+        time.sleep(10)  # 10 saniyede bir kontrol et
 
+# Telegram mesajı gönderme fonksiyonu
+def send_telegram_message(message):
+    url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
+    data = {
+        'chat_id': CHAT_ID,
+        'text': message
+    }
+    try:
+        response = requests.post(url, data=data)
+        if response.status_code != 200:
+            print(f'Error: {response.status_code}')
+    except Exception as e:
+        print(f'Error sending message: {e}')
+
+# Flask uygulaması için ana endpoint
+@app.route('/')
+def index():
+    return 'Flask uygulaması çalışıyor.'
+
+# Flask uygulaması başlatma ve kontrolü çoklu thread ile başlatma
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    # Web scraping fonksiyonunu başlat
-    from threading import Thread
-    scraper_thread = Thread(target=run_scraping)
-    scraper_thread.start()
+    # Telegram kontrolünü ayrı bir thread'de çalıştırma
+    threading.Thread(target=check_stock, daemon=True).start()
 
-    # Flask uygulamasını başlat
-    app.run(host='0.0.0.0', port=5000)
+    # Flask uygulamasını başlatma
+    app.run(debug=True, use_reloader=False)
