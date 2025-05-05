@@ -1,13 +1,17 @@
 services:
   - type: web
-    name: car-stock-checker
-    env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python main.py"
+    name: tesla-stock-tracker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tesla_stock_tracker.py
     envVars:
       - key: TELEGRAM_BOT_TOKEN
-        value: 7770662830:AAF81ZmkPNNCxV2sUg-0jSVyEb64fTNkBn8
+        fromGitHub:
+          repo: your-github-username/your-repo-name
+          secret: TELEGRAM_BOT_TOKEN
       - key: TELEGRAM_CHAT_ID
-        value: 1476078120
-      - key: CAR_URL
-        value: https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0
+        fromGitHub:
+          repo: your-github-username/your-repo-name
+          secret: TELEGRAM_CHAT_ID
+      - key: CHECK_INTERVAL_SECONDS
+        value: 1
