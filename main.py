@@ -54,3 +54,6 @@ if __name__ == '__main__':
     # Render veya başka bir platform için port ayarları
     port = int(os.environ.get('PORT', 8080))  # Render gibi platformlar için PORT ayarını al
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+@app.route('/')
+def home():
+    return 'Stok kontrol botu çalışıyor.'
