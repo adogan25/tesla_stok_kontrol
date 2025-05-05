@@ -11,8 +11,8 @@ from telegram.error import TelegramError
 app = Flask(__name__)
 
 # Telegram bot bilgilerinizi burada ayarlayın
-TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-CHAT_ID = 'YOUR_CHAT_ID'
+TELEGRAM_TOKEN = '7770662830:AAF81ZmkPNNCxV2sUg-0jSVyEb64fTNkBn8'
+CHAT_ID = '1476078120'
 bot = Bot(token=TELEGRAM_TOKEN)
 
 # Stok kontrolü yapan fonksiyon
