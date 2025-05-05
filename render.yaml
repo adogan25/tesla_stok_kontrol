@@ -1,11 +1,13 @@
 services:
   - type: web
-    name: my-flask-app
+    name: car-stock-checker
     env: python
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python main.py"
     envVars:
-      - key: FLASK_APP
-        value: "main.py"
-      - key: FLASK_ENV
-        value: "production"
+      - key: TELEGRAM_BOT_TOKEN
+        value: 7770662830:AAF81ZmkPNNCxV2sUg-0jSVyEb64fTNkBn8
+      - key: TELEGRAM_CHAT_ID
+        value: 1476078120
+      - key: CAR_URL
+        value: https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0
