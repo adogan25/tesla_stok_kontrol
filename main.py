@@ -1,26 +1,24 @@
-import os
+from flask import Flask
+import threading
+import time
+import schedule
 import requests
 from bs4 import BeautifulSoup
 import telegram
-import time
-import schedule
-from datetime import datetime
-from dotenv import load_dotenv
+import os
 import logging
+from datetime import datetime
+
+app = Flask(__name__)
 
 # Log ayarları
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Çevresel değişkenleri yükle
-load_dotenv()
-
 # Ayarlar
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-CHECK_INTERVAL_SECONDS = int(os.getenv('CHECK_INTERVAL_SECONDS', 10))  # Varsayılan 10 saniye
-REQUEST_TIMEOUT = 10  # İstek timeout süresi (saniye)
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL_MINUTES', 1))  # Dakika cinsinden
 
 # Tesla Envanter URL
 TESLA_URL = "https://www.tesla.com/tr_TR/inventory/new/my?arrangeby=plh&zip=34025&range=0"
@@ -34,21 +32,22 @@ def send_telegram_message(message):
         bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         logger.info("Telegram mesajı gönderildi")
+        return True
     except Exception as e:
         logger.error(f"Telegram mesaj gönderilemedi: {e}")
+        return False
 
 def check_tesla_stock():
     global previous_stock, last_notification_time
     
     try:
-        headers = {'User-Agent': USER_AGENT}
-        
-        # Tesla suncularını aşırı yüklememek için rastgele bir bekleme
-        time.sleep(1 + (2 * random.random()))  # 1-3 saniye arası rastgele bekleme
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
         
         logger.info(f"Stok kontrolü başlatılıyor... {datetime.now().strftime('%H:%M:%S')}")
         
-        response = requests.get(TESLA_URL, headers=headers, timeout=REQUEST_TIMEOUT)
+        response = requests.get(TESLA_URL, headers=headers, timeout=10)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -72,40 +71,34 @@ def check_tesla_stock():
         
         # Stok değişikliklerini kontrol et
         if set(current_stock) != set(previous_stock):
-            notification_cooldown = 60  # 1 dakika (aynı değişiklik için tekrar bildirim göndermemek için)
+            notification_cooldown = 300  # 5 dakika (aynı değişiklik için tekrar bildirim göndermemek için)
             
-            # Son bildirimden belirli süre geçmişse veya ilk defa çalışıyorsa
             if (last_notification_time is None or 
                 (datetime.now() - last_notification_time).total_seconds() > notification_cooldown):
                 
                 if not previous_stock:
                     message = "🚗 Tesla Stok Takip Sistemi Başlatıldı!\n\n"
-                    message += f"⏰ Kontrol Aralığı: {CHECK_INTERVAL_SECONDS} saniye\n\n"
+                    message += f"⏰ Kontrol Aralığı: {CHECK_INTERVAL} dakika\n\n"
                     message += "📢 Mevcut Stok:\n\n"
                     message += "\n\n".join(current_stock) if current_stock else "Stokta araç bulunmamaktadır."
                 else:
                     message = "🔄 Tesla Stok Değişikliği Algılandı!\n\n"
                     
-                    # Yeni gelen araçlar
                     new_vehicles = [v for v in current_stock if v not in previous_stock]
                     if new_vehicles:
                         message += f"➕ {len(new_vehicles)} Yeni Araç:\n\n"
                         message += "\n\n".join(new_vehicles) + "\n\n"
                     
-                    # Stoktan düşen araçlar
                     removed_vehicles = [v for v in previous_stock if v not in current_stock]
                     if removed_vehicles:
                         message += f"➖ {len(removed_vehicles)} Araç Stoktan Düştü:\n\n"
                         message += "\n\n".join(removed_vehicles) + "\n\n"
                     
-                    if not new_vehicles and not removed_vehicles:
-                        message += "ℹ️ Stok bilgilerinde içerik değişikliği yok, ancak sıralama değişmiş olabilir.\n\n"
-                    
                     message += "📋 Güncel Stok Durumu:\n\n"
                     message += "\n\n".join(current_stock) if current_stock else "Stokta araç bulunmamaktadır."
                 
-                send_telegram_message(message)
-                last_notification_time = datetime.now()
+                if send_telegram_message(message):
+                    last_notification_time = datetime.now()
         
         previous_stock = current_stock
         
@@ -114,27 +107,32 @@ def check_tesla_stock():
     except Exception as e:
         logger.error(f"Beklenmeyen hata: {e}")
 
-if __name__ == "__main__":
-    import random
-    
+def schedule_checker():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+@app.route('/')
+def home():
+    return "Tesla Stok Takip Sistemi Aktif"
+
+def run_scheduler():
     # Başlangıç mesajı
-    send_telegram_message(f"🔔 Tesla Stok Takip Sistemi Başlatıldı! Her {CHECK_INTERVAL_SECONDS} saniyede bir stok kontrol edilecek.")
+    send_telegram_message(f"🔔 Tesla Stok Takip Sistemi Başlatıldı! Her {CHECK_INTERVAL} dakikada bir stok kontrol edilecek.")
     
     # Zamanlayıcıyı ayarla
-    schedule.every(CHECK_INTERVAL_SECONDS).seconds.do(check_tesla_stock)
+    schedule.every(CHECK_INTERVAL).minutes.do(check_tesla_stock)
     
     # İlk kontrolü hemen yap
     check_tesla_stock()
     
-    # Ana döngü
-    while True:
-        try:
-            schedule.run_pending()
-            time.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Uygulama kapatılıyor...")
-            send_telegram_message("🔴 Tesla Stok Takip Sistemi Durduruldu!")
-            break
-        except Exception as e:
-            logger.error(f"Ana döngü hatası: {e}")
-            time.sleep(10)  # Hata durumunda 10 saniye bekle
+    # Zamanlayıcı thread'i başlat
+    t = threading.Thread(target=schedule_checker)
+    t.daemon = True
+    t.start()
+
+# Uygulama başladığında zamanlayıcıyı başlat
+run_scheduler()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
