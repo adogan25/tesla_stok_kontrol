@@ -1,15 +1,11 @@
 services:
   - type: web
-    name: flask-web-scraper
+    name: my-flask-app
     env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
     envVars:
-      - key: TELEGRAM_TOKEN
-        value: "YOUR_BOT_TOKEN"
-      - key: CHAT_ID
-        value: "YOUR_CHAT_ID"
-    autoDeploy: true
-    branches:
-      - main
+      - key: FLASK_APP
+        value: "main.py"
+      - key: FLASK_ENV
+        value: "production"
